@@ -1,81 +1,77 @@
 import requests
 from typing import Any, Dict
 
-APIKEY = "YOUR_HIBP_API_KEY"
-
 def search_breaches(query: str) -> Dict[str, Any]:
-    """
-    Queries Have I Been Pwned API for data breaches associated with an email address.
-    """
     Email = query.strip()
-    
-    Headers = {
-        "hibp-api-key": APIKEY,
-        "User-Agent": "OSINT-Tool"
-    }
-    
-    Url = f"https://haveibeenpwned.com/api/v3/breachedaccount/{Email}"
+    # Building API URL 
+    Url = f"https://api.xposedornot.com/v1/check-email/{Email}"
     
     try:
-        Response = requests.get(Url, headers=Headers, params={"truncateResponse": "false"}, timeout=10)
+        # Calling the api
+        Response = requests.get(Url, timeout=10)
         
-        if Response.status_code == 200:
-            Breaches = Response.json()
-            Count = len(Breaches)
-            TypesSet = set()
+        if Response.status_code == 200: # Successful response - databreaches were found
+            Data = Response.json()
+            BreachesList = Data.get("breaches", [])
+            Count = len(BreachesList)
             
-            LogDetails = f"[!] WARNING: {Count} DATA BREACHES FOUND FOR {Email}\n"
-            LogDetails += "=" * 60 + "\n"
+            # Prasing details about the leaked data
+            ExposedData = ""
+            PassDetails = Data.get("SearchPassDetails", {})
+            if isinstance(PassDetails, dict):
+                ExposedData = PassDetails.get("exposed_data", "")
             
-            for Idx, Breach in enumerate(Breaches, 1):
-                Name = Breach.get("Name", "Unknown")
-                Domain = Breach.get("Domain", "N/A")
-                Date = Breach.get("BreachDate", "Unknown")
-                DataClasses = ", ".join(Breach.get("DataClasses", []))
-                
-                TypesSet.update(Breach.get("DataClasses", []))
-                
-                LogDetails += f"{Idx}. {Name} ({Domain})\n"
-                LogDetails += f"   • Date of Breach: {Date}\n"
-                LogDetails += f"   • Compromised Data: {DataClasses}\n\n"
+            # Building the log to be able to provide it to the user
+            LogDetails = f"Breaches found for {Email}: {Count}\n"
+            if ExposedData:
+                LogDetails += f"Exposed Data: {ExposedData}\n"
             
+            # Formatting the list
+            for Idx, Breach in enumerate(BreachesList, 1):
+                if isinstance(Breach, dict):
+                    Name = Breach.get("breach", "Unknown")
+                    LogDetails += f"{Idx}. {Name}\n"
+                elif isinstance(Breach, list) and len(Breach) > 0:
+                    LogDetails += f"{Idx}. {Breach[0]}\n"
+                else:
+                    LogDetails += f"{Idx}. {str(Breach)}\n"
+            
+            ResultTypes = ExposedData if ExposedData else "Exposed Accounts"
+            
+            # Return results
             return {
                 "count": Count,
-                "types": ", ".join(TypesSet),
+                "types": ResultTypes,
                 "details": LogDetails
             }
             
-        elif Response.status_code == 404:
+        elif Response.status_code == 404: # Email is clean, no databreaches
             return {
                 "count": 0,
                 "types": "None",
-                "details": f"[✔] Clean record. No breaches found for {Email} in HaveIBeenPwned database."
+                "details": f"No breaches found for {Email}"
             }
             
-        elif Response.status_code == 401:
+        else: # An API status code that we didn't account for 
             return {
                 "count": 0,
                 "types": "Error",
-                "details": "[Error] Invalid HIBP API Key. Please verify your credentials."
+                "details": f"Error: API status code {Response.status_code}"
             }
             
-        elif Response.status_code == 429:
-            return {
-                "count": 0,
-                "types": "Error",
-                "details": "[Error] Rate limited by HaveIBeenPwned. Try again in a few seconds."
-            }
-            
-        else:
-            return {
-                "count": 0,
-                "types": "Error",
-                "details": f"[Error] HIBP API returned status code {Response.status_code}"
-            }
-            
-    except requests.exceptions.RequestException as E:
+    except requests.exceptions.RequestException as E: # Handle connection errors
         return {
             "count": 0,
             "types": "Error",
-            "details": f"[Error] Connection failed: {str(E)}"
+            "details": f"Error: Connection failed: {str(E)}"
         }
+
+# Script is ran in the CLI
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 2: # User forgot to enter the email
+        print("Usage: python breach_search.py <email>")
+        sys.exit(1)
+    TargetEmail = sys.argv[1]
+    ResultVal = search_breaches(TargetEmail)
+    print(ResultVal["details"])
