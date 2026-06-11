@@ -1,3 +1,7 @@
+# Connected Discord-GitHub
+# Roblox: llntercept
+# Discord: @intrcept
+
 import requests
 from typing import Any, Dict
 
